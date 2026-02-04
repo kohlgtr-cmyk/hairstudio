@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Admin - Studio Elegance</title>
+    <link rel="stylesheet" href="admin-styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="admin-header">
+        <div class="container">
+            <div class="header-content">
+                <div>
+                    <h1 class="logo">Studio Elegance</h1>
+                    <p class="subtitle">Painel Administrativo</p>
+                </div>
+                <div class="header-actions">
+                    <button id="refreshBtn" class="btn-icon" title="Atualizar">
+                        <span>🔄</span>
+                    </button>
+                    <a href="index.html" class="btn-secondary">← Voltar ao Site</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Dashboard -->
+    <main class="dashboard">
+        <div class="container">
+            <!-- Estatísticas -->
+            <section class="stats-section">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">📅</div>
+                        <div class="stat-info">
+                            <h3 id="totalAgendamentos">0</h3>
+                            <p>Total de Agendamentos</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⏰</div>
+                        <div class="stat-info">
+                            <h3 id="agendamentosHoje">0</h3>
+                            <p>Agendamentos Hoje</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⏳</div>
+                        <div class="stat-info">
+                            <h3 id="agendamentosPendentes">0</h3>
+                            <p>Pendentes</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info">
+                            <h3 id="agendamentosConfirmados">0</h3>
+                            <p>Confirmados</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Filtros -->
+            <section class="filters-section">
+                <div class="filters">
+                    <div class="filter-group">
+                        <label>Data:</label>
+                        <input type="date" id="filterDate" class="filter-input">
+                    </div>
+                    <div class="filter-group">
+                        <label>Status:</label>
+                        <select id="filterStatus" class="filter-input">
+                            <option value="todos">Todos</option>
+                            <option value="pendente">Pendentes</option>
+                            <option value="confirmado">Confirmados</option>
+                            <option value="concluido">Concluídos</option>
+                            <option value="cancelado">Cancelados</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Profissional:</label>
+                        <select id="filterProfessional" class="filter-input">
+                            <option value="todos">Todos</option>
+                            <option value="Carlos">Carlos</option>
+                            <option value="Marina">Marina</option>
+                            <option value="Roberto">Roberto</option>
+                            <option value="Ana">Ana</option>
+                            <option value="Sem preferência">Sem preferência</option>
+                        </select>
+                    </div>
+                    <button id="clearFilters" class="btn-clear">Limpar Filtros</button>
+                </div>
+            </section>
+
+            <!-- Lista de Agendamentos -->
+            <section class="appointments-section">
+                <div class="section-header">
+                    <h2>Agendamentos</h2>
+                    <div class="view-toggle">
+                        <button class="toggle-btn active" data-view="grid">📊 Grade</button>
+                        <button class="toggle-btn" data-view="list">📋 Lista</button>
+                    </div>
+                </div>
+
+                <div id="appointmentsList" class="appointments-grid">
+                    <!-- Agendamentos serão carregados aqui dinamicamente -->
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <h3>Carregando agendamentos...</h3>
+                        <p>Aguarde enquanto buscamos os dados</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Modal de Detalhes -->
+    <div id="detailsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Detalhes do Agendamento</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div id="modalBody" class="modal-body">
+                <!-- Conteúdo será preenchido dinamicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        // TODO: Substituir com suas credenciais do Firebase
+        const firebaseConfig = {
+            apiKey: "SUA_API_KEY_AQUI",
+            authDomain: "seu-projeto.firebaseapp.com",
+            projectId: "seu-projeto-id",
+            storageBucket: "seu-projeto.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "seu-app-id"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let allAppointments = [];
+        let currentView = 'grid';
+
+        // Configurar data de hoje no filtro
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('filterDate').value = today;
+
+        // Escutar mudanças em tempo real
+        const q = query(collection(db, 'agendamentos'), orderBy('createdAt', 'desc'));
+        
+        onSnapshot(q, (snapshot) => {
+            allAppointments = [];
+            snapshot.forEach((doc) => {
+                allAppointments.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+            updateStats();
+            filterAndDisplayAppointments();
+        });
+
+        // Atualizar estatísticas
+        function updateStats() {
+            const total = allAppointments.length;
+            const today = new Date().toISOString().split('T')[0];
+            const appointmentsToday = allAppointments.filter(a => a.date === today).length;
+            const pending = allAppointments.filter(a => a.status === 'pendente').length;
+            const confirmed = allAppointments.filter(a => a.status === 'confirmado').length;
+
+            document.getElementById('totalAgendamentos').textContent = total;
+            document.getElementById('agendamentosHoje').textContent = appointmentsToday;
+            document.getElementById('agendamentosPendentes').textContent = pending;
+            document.getElementById('agendamentosConfirmados').textContent = confirmed;
+        }
+
+        // Filtrar e exibir agendamentos
+        function filterAndDisplayAppointments() {
+            const dateFilter = document.getElementById('filterDate').value;
+            const statusFilter = document.getElementById('filterStatus').value;
+            const professionalFilter = document.getElementById('filterProfessional').value;
+
+            let filtered = allAppointments;
+
+            if (dateFilter) {
+                filtered = filtered.filter(a => a.date === dateFilter);
+            }
+
+            if (statusFilter !== 'todos') {
+                filtered = filtered.filter(a => a.status === statusFilter);
+            }
+
+            if (professionalFilter !== 'todos') {
+                filtered = filtered.filter(a => a.professional === professionalFilter);
+            }
+
+            displayAppointments(filtered);
+        }
+
+        // Exibir agendamentos
+        function displayAppointments(appointments) {
+            const container = document.getElementById('appointmentsList');
+
+            if (appointments.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <h3>Nenhum agendamento encontrado</h3>
+                        <p>Tente ajustar os filtros ou aguarde novos agendamentos</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.className = currentView === 'grid' ? 'appointments-grid' : 'appointments-list';
+            container.innerHTML = '';
+
+            appointments.forEach(appointment => {
+                const card = createAppointmentCard(appointment);
+                container.appendChild(card);
+            });
+        }
+
+        // Criar card de agendamento
+        function createAppointmentCard(appointment) {
+            const card = document.createElement('div');
+            card.className = `appointment-card status-${appointment.status}`;
+            
+            const statusLabels = {
+                'pendente': '⏳ Pendente',
+                'confirmado': '✅ Confirmado',
+                'concluido': '✔️ Concluído',
+                'cancelado': '❌ Cancelado'
+            };
+
+            const dateObj = new Date(appointment.date + 'T00:00:00');
+            const formattedDate = dateObj.toLocaleDateString('pt-BR');
+
+            card.innerHTML = `
+                <div class="card-header">
+                    <div class="status-badge">${statusLabels[appointment.status]}</div>
+                    <div class="card-actions">
+                        <button class="btn-icon-small" onclick="showDetails('${appointment.id}')" title="Ver detalhes">
+                            👁️
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="client-info">
+                        <h3 class="client-name">${appointment.clientName}</h3>
+                        <p class="client-phone">📱 ${formatPhone(appointment.clientPhone)}</p>
+                    </div>
+                    <div class="appointment-details">
+                        <div class="detail-item">
+                            <span class="detail-icon">💈</span>
+                            <span>${appointment.service}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-icon">📅</span>
+                            <span>${formattedDate}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-icon">⏰</span>
+                            <span>${appointment.time}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-icon">👨‍🎤</span>
+                            <span>${appointment.professional}</span>
+                        </div>
+                    </div>
+                    ${appointment.observations ? `
+                        <div class="observations">
+                            <strong>Obs:</strong> ${appointment.observations}
+                        </div>
+                    ` : ''}
+                </div>
+                <div class="card-footer">
+                    <button onclick="sendWhatsAppConfirmation('${appointment.id}')" class="btn-whatsapp">
+                        💬 Enviar Confirmação
+                    </button>
+                    ${appointment.status === 'pendente' ? `
+                        <button onclick="updateStatus('${appointment.id}', 'confirmado')" class="btn-confirm">
+                            ✅ Confirmar
+                        </button>
+                    ` : ''}
+                    ${appointment.status === 'confirmado' ? `
+                        <button onclick="updateStatus('${appointment.id}', 'concluido')" class="btn-complete">
+                            ✔️ Concluir
+                        </button>
+                    ` : ''}
+                    <button onclick="updateStatus('${appointment.id}', 'cancelado')" class="btn-cancel">
+                        ❌ Cancelar
+                    </button>
+                </div>
+            `;
+
+            return card;
+        }
+
+        // Formatar telefone
+        function formatPhone(phone) {
+            if (!phone) return '';
+            phone = phone.replace(/\D/g, '');
+            return phone.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
+        }
+
+        // Enviar confirmação via WhatsApp
+        window.sendWhatsAppConfirmation = function(appointmentId) {
+            const appointment = allAppointments.find(a => a.id === appointmentId);
+            if (!appointment) return;
+
+            const dateObj = new Date(appointment.date + 'T00:00:00');
+            const formattedDate = dateObj.toLocaleDateString('pt-BR', { 
+                weekday: 'long', 
+                day: '2-digit', 
+                month: 'long' 
+            });
+
+            const message = `Olá *${appointment.clientName}*! 😊
+
+Confirmamos seu agendamento no *Studio Elegance*:
+
+📋 *Serviço:* ${appointment.service}
+📅 *Data:* ${formattedDate}
+⏰ *Horário:* ${appointment.time}
+👨‍🎤 *Profissional:* ${appointment.professional}
+
+Estamos te esperando! 💈✨
+
+_Em caso de imprevisto, por favor nos avise com antecedência._`;
+
+            const whatsappUrl = `https://wa.me/55${appointment.clientPhone}?text=${encodeURIComponent(message)}`;
+            window.open(whatsappUrl, '_blank');
+
+            // Atualizar status para confirmado automaticamente
+            if (appointment.status === 'pendente') {
+                updateStatus(appointmentId, 'confirmado');
+            }
+        };
+
+        // Atualizar status
+        window.updateStatus = async function(appointmentId, newStatus) {
+            try {
+                const docRef = doc(db, 'agendamentos', appointmentId);
+                await updateDoc(docRef, { status: newStatus });
+                
+                const statusMessages = {
+                    'confirmado': 'Agendamento confirmado! ✅',
+                    'concluido': 'Agendamento concluído! ✔️',
+                    'cancelado': 'Agendamento cancelado! ❌'
+                };
+                
+                showNotification(statusMessages[newStatus] || 'Status atualizado!');
+            } catch (error) {
+                console.error('Erro ao atualizar status:', error);
+                alert('Erro ao atualizar status. Tente novamente.');
+            }
+        };
+
+        // Mostrar detalhes
+        window.showDetails = function(appointmentId) {
+            const appointment = allAppointments.find(a => a.id === appointmentId);
+            if (!appointment) return;
+
+            const dateObj = new Date(appointment.date + 'T00:00:00');
+            const formattedDate = dateObj.toLocaleDateString('pt-BR', { 
+                weekday: 'long',
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric'
+            });
+
+            const createdDate = appointment.createdAt ? 
+                new Date(appointment.createdAt.seconds * 1000).toLocaleString('pt-BR') : 
+                'Data não disponível';
+
+            const statusLabels = {
+                'pendente': '⏳ Pendente',
+                'confirmado': '✅ Confirmado',
+                'concluido': '✔️ Concluído',
+                'cancelado': '❌ Cancelado'
+            };
+
+            document.getElementById('modalBody').innerHTML = `
+                <div class="detail-grid">
+                    <div class="detail-section">
+                        <h3>👤 Informações do Cliente</h3>
+                        <p><strong>Nome:</strong> ${appointment.clientName}</p>
+                        <p><strong>WhatsApp:</strong> ${formatPhone(appointment.clientPhone)}</p>
+                    </div>
+
+                    <div class="detail-section">
+                        <h3>📋 Detalhes do Serviço</h3>
+                        <p><strong>Serviço:</strong> ${appointment.service}</p>
+                        <p><strong>Profissional:</strong> ${appointment.professional}</p>
+                        <p><strong>Data:</strong> ${formattedDate}</p>
+                        <p><strong>Horário:</strong> ${appointment.time}</p>
+                    </div>
+
+                    <div class="detail-section">
+                        <h3>ℹ️ Informações Adicionais</h3>
+                        <p><strong>Status:</strong> ${statusLabels[appointment.status]}</p>
+                        <p><strong>Agendado em:</strong> ${createdDate}</p>
+                        ${appointment.observations ? `
+                            <p><strong>Observações:</strong><br>${appointment.observations}</p>
+                        ` : '<p><em>Sem observações</em></p>'}
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button onclick="sendWhatsAppConfirmation('${appointment.id}')" class="btn-whatsapp">
+                        💬 Enviar Confirmação WhatsApp
+                    </button>
+                    <button onclick="sendWhatsAppReminder('${appointment.id}')" class="btn-whatsapp">
+                        ⏰ Enviar Lembrete
+                    </button>
+                </div>
+            `;
+
+            document.getElementById('detailsModal').style.display = 'flex';
+        };
+
+        // Enviar lembrete via WhatsApp
+        window.sendWhatsAppReminder = function(appointmentId) {
+            const appointment = allAppointments.find(a => a.id === appointmentId);
+            if (!appointment) return;
+
+            const dateObj = new Date(appointment.date + 'T00:00:00');
+            const formattedDate = dateObj.toLocaleDateString('pt-BR');
+
+            const message = `Olá *${appointment.clientName}*! 👋
+
+Este é um lembrete do seu agendamento no *Studio Elegance*:
+
+⏰ *Amanhã* - ${formattedDate} às ${appointment.time}
+💈 *Serviço:* ${appointment.service}
+
+Nos vemos em breve! ✨`;
+
+            const whatsappUrl = `https://wa.me/55${appointment.clientPhone}?text=${encodeURIComponent(message)}`;
+            window.open(whatsappUrl, '_blank');
+        };
+
+        // Notificação
+        function showNotification(message) {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 100);
+
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // Event Listeners
+        document.getElementById('refreshBtn').addEventListener('click', () => {
+            showNotification('Dados atualizados! 🔄');
+        });
+
+        document.getElementById('clearFilters').addEventListener('click', () => {
+            document.getElementById('filterDate').value = '';
+            document.getElementById('filterStatus').value = 'todos';
+            document.getElementById('filterProfessional').value = 'todos';
+            filterAndDisplayAppointments();
+        });
+
+        document.getElementById('filterDate').addEventListener('change', filterAndDisplayAppointments);
+        document.getElementById('filterStatus').addEventListener('change', filterAndDisplayAppointments);
+        document.getElementById('filterProfessional').addEventListener('change', filterAndDisplayAppointments);
+
+        // Toggle de visualização
+        document.querySelectorAll('.toggle-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentView = btn.dataset.view;
+                filterAndDisplayAppointments();
+            });
+        });
+
+        // Fechar modal
+        document.querySelector('.close-modal').addEventListener('click', () => {
+            document.getElementById('detailsModal').style.display = 'none';
+        });
+
+        window.addEventListener('click', (e) => {
+            if (e.target.id === 'detailsModal') {
+                document.getElementById('detailsModal').style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
